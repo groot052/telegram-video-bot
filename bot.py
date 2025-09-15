@@ -90,7 +90,20 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         if os.path.getsize(output_path) > 2 * 1024 * 1024 * 1024:
             await query.message.reply_text("❌ Converted file is too large (>2GB) to upload.")
         else:
-            await query.message.reply_video(video=open(output_path, "rb"))
+            from telegram import InputFile
+
+if not os.path.exists(output_path):
+    await query.message.reply_text("❌ Converted file not found.")
+    return
+
+if os.path.getsize(output_path) > 2 * 1024 * 1024 * 1024:
+    await query.message.reply_text("❌ Converted file too large (>2GB) to send.")
+    return
+
+try:
+    await query.message.reply_video(video=InputFile(output_path))
+except Exception as e:
+    await query.message.reply_text(f"❌ Upload error: {str(e)}")
 
     except Exception as e:
         await query.message.reply_text(f"❌ Error: {str(e)}")
