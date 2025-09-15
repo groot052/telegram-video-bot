@@ -4,10 +4,10 @@ from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import Application, CommandHandler, MessageHandler, CallbackQueryHandler, ContextTypes, filters
 from video_utils import get_video_info, compress_video, convert_resolution
 
-# Config
-TOKEN = "YOUR_BOT_TOKEN"  # Replace with your actual Telegram bot token
 DOWNLOAD_DIR = "downloads"
 os.makedirs(DOWNLOAD_DIR, exist_ok=True)
+
+TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")  # Read from env var (set in Colab or .env)
 
 RESOLUTIONS = {
     "144p": 144,
@@ -25,15 +25,14 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 async def handle_video(update: Update, context: ContextTypes.DEFAULT_TYPE):
     video = update.message.video or update.message.document
-
     if video.file_size > 2 * 1024 * 1024 * 1024:
         await update.message.reply_text("❌ File exceeds 2GB limit.")
         return
 
     file_id = video.file_id
     file = await context.bot.get_file(file_id)
-    file_ext = os.path.splitext(video.file_name or "video.mp4")[1]
-    filename = f"{uuid.uuid4()}{file_ext}"
+    ext = os.path.splitext(video.file_name or "video.mp4")[1]
+    filename = f"{uuid.uuid4()}{ext}"
     filepath = os.path.join(DOWNLOAD_DIR, filename)
 
     await update.message.reply_text("⬇️ Downloading your video...")
@@ -56,12 +55,10 @@ async def handle_video(update: Update, context: ContextTypes.DEFAULT_TYPE):
     )
     await update.message.reply_markdown(msg)
 
-    # Resolution options
     buttons = [
         [InlineKeyboardButton(res, callback_data=res)] for res in RESOLUTIONS
     ]
-    buttons.append([InlineKeyboardButton("🗜 Compress (keep resolution)", callback_data="compress")])
-
+    buttons.append([InlineKeyboardButton("🗜 Compress (same resolution)", callback_data="compress")])
     await update.message.reply_text(
         "🔧 Choose conversion or compression option:",
         reply_markup=InlineKeyboardMarkup(buttons)
@@ -74,7 +71,7 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     video_path = context.user_data.get("video_path")
 
     if not video_path or not os.path.exists(video_path):
-        await query.edit_message_text("❌ Original file not found.")
+        await query.edit_message_text("❌ Video file not found.")
         return
 
     filename = os.path.basename(video_path)
@@ -87,16 +84,18 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         elif selection in RESOLUTIONS:
             convert_resolution(video_path, output_path, RESOLUTIONS[selection])
         else:
-            await query.edit_message_text("❌ Invalid option selected.")
+            await query.edit_message_text("❌ Invalid option.")
             return
 
-        await query.message.reply_video(video=open(output_path, "rb"))
+        if os.path.getsize(output_path) > 2 * 1024 * 1024 * 1024:
+            await query.message.reply_text("❌ Converted file is too large (>2GB) to upload.")
+        else:
+            await query.message.reply_video(video=open(output_path, "rb"))
 
     except Exception as e:
         await query.message.reply_text(f"❌ Error: {str(e)}")
 
     finally:
-        # Clean up
         if os.path.exists(video_path):
             os.remove(video_path)
         if os.path.exists(output_path):
@@ -106,8 +105,11 @@ async def error_handler(update, context):
     print(f"[ERROR] {context.error}")
 
 def main():
-    app = Application.builder().token(TOKEN).build()
+    if not TOKEN:
+        print("❌ TELEGRAM_BOT_TOKEN not set in environment variables.")
+        return
 
+    app = Application.builder().token(TOKEN).build()
     app.add_handler(CommandHandler("start", start))
     app.add_handler(MessageHandler(filters.VIDEO | filters.Document.VIDEO, handle_video))
     app.add_handler(CallbackQueryHandler(handle_callback))
