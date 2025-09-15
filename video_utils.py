@@ -26,19 +26,16 @@ def get_video_info(file_path):
         return {"error": str(e)}
 
 def compress_video(input_path, output_path, crf=28):
-    # Compress without changing resolution
     cmd = [
         "ffmpeg", "-i", input_path,
         "-vcodec", "libx264", "-crf", str(crf),
         "-preset", "fast",
-        "-acodec", "aac",
-        "-b:a", "128k",
+        "-acodec", "aac", "-b:a", "128k",
         output_path
     ]
     subprocess.run(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
 
 def convert_resolution(input_path, output_path, height):
-    # Convert to a specific resolution (height), maintaining aspect ratio
     cmd = [
         "ffmpeg", "-i", input_path,
         "-vf", f"scale=-2:{height}",
